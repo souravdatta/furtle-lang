@@ -5,7 +5,7 @@
 
 
 (define-tokens FurtleTok [SYMBOL NUMBER OP])
-(define-empty-tokens FurtleTok* [TO END EOF NEWLINE REPEAT IF ELSE WHEN THEN])
+(define-empty-tokens FurtleTok* [TO END EOF NEWLINE REPEAT IF ELSE WHEN THEN DO])
 
 (define furtle-lexer (lexer
                       [(eof) (token-EOF)]
@@ -13,6 +13,8 @@
                       [(:or whitespace blank iso-control) (furtle-lexer input-port)]
                       [(:or (:: #\t #\o)
                             (:: #\T #\O)) (token-TO)]
+                      [(:or (:: #\d #\o)
+                            (:: #\D #\O)) (token-DO)]
                       [(:or (:: #\e #\n #\d)
                             (:: #\E #\N #\D)) (token-END)]
                       [(:or (:: #\r #\e #\p #\e #\a #\t)
@@ -37,4 +39,3 @@
         (cond
          ((eq? next-token 'EOF) (reverse tokens))
          (else (looper (cons next-token tokens))))))))
-
