@@ -6,11 +6,12 @@
 
 
 (define-tokens FurtleTok [SYMBOL NUMBER OP])
-(define-empty-tokens FurtleTok* [TO END EOF NEWLINE REPEAT IF ELSE WHEN THEN DO])
+(define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT IF ELSE WHEN THEN DO])
 
 (define furtle-lexer (lexer
                       [(eof) (token-EOF)]
                       ;;[#\newline (token-NEWLINE)]
+                      [#\; (token-SEP)]
                       [(:or whitespace blank iso-control) (furtle-lexer input-port)]
                       [(:or (:: #\t #\o)
                             (:: #\T #\O)) (token-TO)]
@@ -63,10 +64,11 @@
                        (grammar
                         (funcalls ((funcall) (void))
                                   ((funcall funcalls) (void)))
-                        (funcall ((SYMBOL arglist) (push-op (list 'funcall $1))))
+                        (funcall ((SYMBOL arglist SEP) (push-op (list 'funcall $1))))
                         (arglist
                          (() (push-op (list 'arg '())))
-                         ((NUMBER arglist) (push-op (list 'arg $1))))))) 
+                         ((NUMBER arglist) (push-op (list 'val $1)))
+                         ((SYMBOL arglist) (push-op (list 'var $1)))))))
                        
 
 (define (parse-string s)
