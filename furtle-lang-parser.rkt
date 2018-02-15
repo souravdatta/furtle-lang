@@ -2,6 +2,7 @@
 
 (require parser-tools/lex)
 (require (prefix-in : parser-tools/lex-sre))
+(require parser-tools/yacc)
 
 
 (define-tokens FurtleTok [SYMBOL NUMBER OP])
@@ -37,5 +38,40 @@
     (let looper ([tokens '()])
       (let ([next-token (furtle-lexer ip)])
         (cond
-         ((eq? next-token 'EOF) (reverse tokens))
-         (else (looper (cons next-token tokens))))))))
+          ((eq? next-token 'EOF) (reverse tokens))
+          (else (looper (cons next-token tokens))))))))
+
+
+(define stack '())
+
+(define (push-op v)
+  (set! stack (cons v stack)))
+
+(define (pop-op)
+  (if (empty? stack)
+      'eof
+      (let ([top (car stack)])
+        (set! stack (cdr stack))
+        top)))
+
+(define furtle-parser (parser
+                       (tokens FurtleTok FurtleTok*)
+                       (start funcalls)
+                       (end EOF)
+                       (error (λ (tok tname tval)
+                                (displayln (format "tok_~a, tok_val_~a" tname tval))))
+                       (grammar
+                        (funcalls ((funcall) (void))
+                                  ((funcall funcalls) (void)))
+                        (funcall ((SYMBOL arglist) (push-op (list 'funcall $1))))
+                        (arglist
+                         (() (push-op (list 'arg '())))
+                         ((NUMBER arglist) (push-op (list 'arg $1))))))) 
+                       
+
+(define (parse-string s)
+  (let ([is (open-input-string s)])
+    (set! stack '())
+    (furtle-parser (λ () (furtle-lexer is)))
+    (displayln (format "~a" (reverse stack)))))
+
