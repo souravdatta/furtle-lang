@@ -4,9 +4,53 @@
 (require (prefix-in : parser-tools/lex-sre))
 (require parser-tools/yacc)
 
+(define vars (make-hasheq))
 
-(define-tokens FurtleTok [SYMBOL NUMBER OP])
-(define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT IF ELSE WHEN THEN DO])
+(define (reset-vars!)
+  (hash-clear! vars))
+
+(define (bind-var! var val)
+  (let ([pvalue (hash-ref vars var (lambda () #f))])
+    (if pvalue
+        (error (format "Cannot rebind ~a, already bound to ~a"
+                       var
+                       pvalue))
+        (hash-set! vars var val))))
+        
+(define (recall-var var)
+  (hash-ref vars var (λ () (error (format "Unable to get bindings for ~a" var)))))
+
+(define stack '())
+
+(define (reset-stack!)
+  (set! stack '()))
+
+(define (push-op! v)
+  (set! stack (cons v stack)))
+
+(define (pop-op!)
+  (if (empty? stack)
+      'eof
+      (let ([top (car stack)])
+        (set! stack (cdr stack))
+        top)))
+
+(define (simplify-exp lhs op rhs)
+  (list op
+        (simplify lhs)
+        (simplify rhs)))
+
+(define (simplify exp)
+  (cond
+    ((number? exp) exp)
+    ((symbol? exp) (recall-var exp))
+    ((list? exp) exp)
+    (else (simplify-exp (car exp) (cadr exp) (caddr exp)))))
+
+
+(define-tokens FurtleTok [SYMBOL NUMBER OP OP_ARITHMATIC])
+(define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT
+                                    IF ELSE WHEN THEN DO OP_ASSIGN OP_OPEN_PAREN OP_CLOSE_PAREN])
 
 (define furtle-lexer (lexer
                       [(eof) (token-EOF)]
@@ -29,7 +73,11 @@
                             (:: #\W #\H #\E #\N)) (token-WHEN)]
                       [(:or (:: #\t #\h #\e #\n)
                             (:: #\T #\H #\E #\N)) (token-THEN)]
-                      [(:or #\+ #\- #\* #\/ #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\! #\=) (:: #\: #\=) #\( #\)) (token-OP lexeme)]
+                      [(:: #\: #\=) (token-OP_ASSIGN)]
+                      [#\( (token-OP_OPEN_PAREN)]
+                      [#\) (token-OP_CLOSE_PAREN)]
+                      [(:or #\+ #\- #\* #\/) (token-OP_ARITHMATIC lexeme)]
+                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP lexeme)]
                       [(:: alphabetic (:* (:or alphabetic numeric))) (token-SYMBOL (string->symbol lexeme))]
                       [(:+ numeric) (token-NUMBER (string->number lexeme))]))
 
@@ -43,37 +91,35 @@
           (else (looper (cons next-token tokens))))))))
 
 
-(define stack '())
-
-(define (push-op v)
-  (set! stack (cons v stack)))
-
-(define (pop-op)
-  (if (empty? stack)
-      'eof
-      (let ([top (car stack)])
-        (set! stack (cdr stack))
-        top)))
-
 (define furtle-parser (parser
                        (tokens FurtleTok FurtleTok*)
-                       (start funcalls)
+                       (start statements)
                        (end EOF)
                        (error (λ (tok tname tval)
                                 (displayln (format "tok_~a, tok_val_~a" tname tval))))
                        (grammar
-                        (funcalls ((funcall) (void))
-                                  ((funcall funcalls) (void)))
-                        (funcall ((SYMBOL arglist SEP) (push-op (list 'funcall $1))))
+                        (statement ((assignment) (void))
+                                   ((funcall) (void)))
+                        (statements ((statement SEP) (void))
+                                    ((statement SEP statements) (void)))
+                        (assignment ((SYMBOL OP_ASSIGN rvalue)
+                                     (bind-var! $1 $3)))
+                        (rvalue ((SYMBOL) (recall-var $1))
+                                ((NUMBER) $1)
+                                ((OP_OPEN_PAREN numeric-exp OP_CLOSE_PAREN) $2))
+                        (numeric-exp ((NUMBER) $1)
+                                     ((rvalue OP_ARITHMATIC rvalue) (simplify-exp $1 $2 $3)))
+                        (funcall ((SYMBOL arglist) (push-op! $1)))
                         (arglist
-                         (() (push-op (list 'arg '())))
-                         ((NUMBER arglist) (push-op (list 'val $1)))
-                         ((SYMBOL arglist) (push-op (list 'var $1)))))))
+                         (() (void))
+                         ((rvalue arglist) (push-op! $1))))))
                        
 
 (define (parse-string s)
   (let ([is (open-input-string s)])
-    (set! stack '())
+    (reset-stack!)
+    (reset-vars!)
     (furtle-parser (λ () (furtle-lexer is)))
-    (displayln (format "~a" (reverse stack)))))
+    (displayln (format "stack: ~a" (reverse stack)))
+    (displayln (format "vars: ~a" vars))))
 
