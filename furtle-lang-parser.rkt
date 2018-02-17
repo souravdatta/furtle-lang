@@ -47,6 +47,8 @@
     ((list? exp) exp)
     (else (simplify-exp (car exp) (cadr exp) (caddr exp)))))
 
+(define (eval-simplified expr)
+  (eval expr (make-base-namespace)))
 
 (define-tokens FurtleTok [SYMBOL NUMBER OP_LOGICAL OP_ARITHMATIC])
 (define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT
@@ -76,8 +78,8 @@
                       [(:: #\: #\=) (token-OP_ASSIGN)]
                       [#\( (token-OP_OPEN_PAREN)]
                       [#\) (token-OP_CLOSE_PAREN)]
-                      [(:or #\+ #\- #\* #\/) (token-OP_ARITHMATIC lexeme)]
-                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP_LOGICAL lexeme)]
+                      [(:or #\+ #\- #\* #\/) (token-OP_ARITHMATIC (string->symbol lexeme))]
+                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP_LOGICAL (string->symbol lexeme))]
                       [(:: alphabetic (:* (:or alphabetic numeric))) (token-SYMBOL (string->symbol lexeme))]
                       [(:+ numeric) (token-NUMBER (string->number lexeme))]))
 
@@ -96,7 +98,7 @@
                        (start statements)
                        (end EOF)
                        (error (λ (tok tname tval)
-                                (displayln (format "tok_~a, tok_val_~a" tname tval))))
+                                (displayln (format "Error in parsing at '~a'" tval))))
                        (grammar
                         (statement ((assignment) (void))
                                    ((funcall) (void)))
@@ -108,7 +110,8 @@
                                 ((NUMBER) $1)
                                 ((OP_OPEN_PAREN numeric-exp OP_CLOSE_PAREN) $2))
                         (numeric-exp ((NUMBER) $1)
-                                     ((rvalue OP_ARITHMATIC rvalue) (simplify-exp $1 $2 $3)))
+                                     ((rvalue OP_ARITHMATIC rvalue) (eval-simplified
+                                                                     (simplify-exp $1 $2 $3))))
                         (funcall ((SYMBOL arglist) (push-op! $1)))
                         (arglist
                          (() (void))
@@ -122,4 +125,3 @@
     (furtle-parser (λ () (furtle-lexer is)))
     (displayln (format "stack: ~a" (reverse stack)))
     (displayln (format "vars: ~a" vars))))
-
