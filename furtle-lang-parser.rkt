@@ -48,7 +48,7 @@
     (else (simplify-exp (car exp) (cadr exp) (caddr exp)))))
 
 
-(define-tokens FurtleTok [SYMBOL NUMBER OP OP_ARITHMATIC])
+(define-tokens FurtleTok [SYMBOL NUMBER OP_LOGICAL OP_ARITHMATIC])
 (define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT
                                     IF ELSE WHEN THEN DO OP_ASSIGN OP_OPEN_PAREN OP_CLOSE_PAREN])
 
@@ -77,7 +77,7 @@
                       [#\( (token-OP_OPEN_PAREN)]
                       [#\) (token-OP_CLOSE_PAREN)]
                       [(:or #\+ #\- #\* #\/) (token-OP_ARITHMATIC lexeme)]
-                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP lexeme)]
+                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP_LOGICAL lexeme)]
                       [(:: alphabetic (:* (:or alphabetic numeric))) (token-SYMBOL (string->symbol lexeme))]
                       [(:+ numeric) (token-NUMBER (string->number lexeme))]))
 
