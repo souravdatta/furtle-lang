@@ -43,16 +43,26 @@
 (define (simplify exp)
   (cond
     ((number? exp) exp)
+    ((boolean? exp) exp)
     ((symbol? exp) (recall-var exp))
     ((list? exp) exp)
     (else (simplify-exp (car exp) (cadr exp) (caddr exp)))))
 
+(define (our-not-equal-numeric? . params)
+  (not (apply = params)))
+
 (define (eval-simplified expr)
-  (eval expr (make-base-namespace)))
+  (let ([nm (make-base-namespace)])
+    (namespace-set-variable-value! '!=
+                                   our-not-equal-numeric?
+                                   #f
+                                   nm)
+    (eval expr nm)))
 
 (define-tokens FurtleTok [SYMBOL NUMBER OP_LOGICAL OP_ARITHMATIC])
 (define-empty-tokens FurtleTok* [TO END EOF SEP REPEAT
-                                    IF ELSE WHEN THEN DO OP_ASSIGN OP_OPEN_PAREN OP_CLOSE_PAREN])
+                                    IF ELSE WHEN THEN TRUE FALSE
+                                    DO OP_ASSIGN OP_OPEN_PAREN OP_CLOSE_PAREN])
 
 (define furtle-lexer (lexer
                       [(eof) (token-EOF)]
@@ -75,11 +85,17 @@
                             (:: #\W #\H #\E #\N)) (token-WHEN)]
                       [(:or (:: #\t #\h #\e #\n)
                             (:: #\T #\H #\E #\N)) (token-THEN)]
+                      [(:or (:: #\t #\r #\u #\e)
+                            (:: #\T #\R #\U #\E)) (token-TRUE)]
+                      [(:or (:: #\f #\a #\l #\s #\e)
+                            (:: #\F #\A #\L #\S #\E)) (token-FALSE)]
                       [(:: #\: #\=) (token-OP_ASSIGN)]
                       [#\( (token-OP_OPEN_PAREN)]
                       [#\) (token-OP_CLOSE_PAREN)]
                       [(:or #\+ #\- #\* #\/) (token-OP_ARITHMATIC (string->symbol lexeme))]
-                      [(:or #\< #\> #\= (:: #\& #\&) (:: #\| #\|) (:: #\: #\=)) (token-OP_LOGICAL (string->symbol lexeme))]
+                      [(:or #\< #\> #\= (:: #\a #\n #\d) (:: #\o #\r) (:: #\n #\o #\t)
+                            (:: #\! #\=))
+                       (token-OP_LOGICAL (string->symbol lexeme))]
                       [(:: alphabetic (:* (:or alphabetic numeric))) (token-SYMBOL (string->symbol lexeme))]
                       [(:+ numeric) (token-NUMBER (string->number lexeme))]))
 
@@ -93,29 +109,37 @@
           (else (looper (cons next-token tokens))))))))
 
 
-(define furtle-parser (parser
-                       (tokens FurtleTok FurtleTok*)
-                       (start statements)
-                       (end EOF)
-                       (error (λ (tok tname tval)
-                                (displayln (format "Error in parsing at '~a'" tval))))
-                       (grammar
-                        (statement ((assignment) (void))
-                                   ((funcall) (void)))
-                        (statements ((statement SEP) (void))
-                                    ((statement SEP statements) (void)))
-                        (assignment ((SYMBOL OP_ASSIGN rvalue)
-                                     (bind-var! $1 $3)))
-                        (rvalue ((SYMBOL) (recall-var $1))
-                                ((NUMBER) $1)
-                                ((OP_OPEN_PAREN numeric-exp OP_CLOSE_PAREN) $2))
-                        (numeric-exp ((NUMBER) $1)
-                                     ((rvalue OP_ARITHMATIC rvalue) (eval-simplified
-                                                                     (simplify-exp $1 $2 $3))))
-                        (funcall ((SYMBOL arglist) (push-op! $1)))
-                        (arglist
-                         (() (void))
-                         ((rvalue arglist) (push-op! $1))))))
+(define furtle-parser
+  (parser
+   (tokens FurtleTok FurtleTok*)
+   (start statements)
+   (end EOF)
+   (error (λ (tok tname tval)
+            (displayln (format "Error in parsing at '~a'" tval))))
+   (grammar
+    (statement ((assignment) (void))
+               ((funcall) (void)))
+    (statements ((statement SEP) (void))
+                ((statement SEP statements) (void)))
+    (assignment ((SYMBOL OP_ASSIGN rvalue)
+                 (bind-var! $1 $3)))
+    (rvalue ((SYMBOL) (recall-var $1))
+            ((NUMBER) $1)
+            ((TRUE) #t)
+            ((FALSE) #f)
+            ((OP_OPEN_PAREN numeric-exp OP_CLOSE_PAREN) $2)
+            ((OP_OPEN_PAREN logical-exp OP_CLOSE_PAREN) $2))
+    (numeric-exp ((NUMBER) $1)
+                 ((rvalue OP_ARITHMATIC rvalue) (eval-simplified
+                                                 (simplify-exp $1 $2 $3))))
+    (logical-exp ((TRUE) #t)
+                 ((FALSE) #f)
+                 ((rvalue OP_LOGICAL rvalue) (eval-simplified
+                                              (simplify-exp $1 $2 $3))))
+    (funcall ((SYMBOL arglist) (push-op! $1)))
+    (arglist
+     (() (void))
+     ((rvalue arglist) (push-op! $1))))))
                        
 
 (define (parse-string s)
