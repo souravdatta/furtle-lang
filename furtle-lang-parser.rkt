@@ -4,21 +4,26 @@
 (require (prefix-in : parser-tools/lex-sre))
 (require parser-tools/yacc)
 
+
+(define *current-stack* (make-parameter '()))
+
+(define *current-vars* (make-parameter (make-hasheq)))
+
 (define vars (make-hasheq))
 
-(define (reset-vars!)
-  (hash-clear! vars))
+(define (reset-vars! vrs)
+  (hash-clear! vrs))
 
 (define (bind-var! var val)
-  (let ([pvalue (hash-ref vars var (lambda () #f))])
+  (let ([pvalue (hash-ref (*current-vars*) var (lambda () #f))])
     (if pvalue
         (error (format "Cannot rebind ~a, already bound to ~a"
                        var
                        pvalue))
-        (hash-set! vars var val))))
+        (hash-set! (*current-vars*) var val))))
         
 (define (recall-var var)
-  (hash-ref vars var (λ () (error (format "Unable to get bindings for ~a" var)))))
+  (hash-ref (*current-vars*) var (λ () (error (format "Unable to get bindings for ~a" var)))))
 
 (define stack '())
 
@@ -29,11 +34,12 @@
   (set! stack (cons v stack)))
 
 (define (pop-op!)
-  (if (empty? stack)
-      'eof
-      (let ([top (car stack)])
-        (set! stack (cdr stack))
-        top)))
+  (let ([stk (*current-stack*)])
+    (if (empty? stk)
+        'eof
+        (let ([top (car stk)])
+          (set! stk (cdr stk))
+          top))))
 
 (define (simplify-exp lhs op rhs)
   (list op
@@ -115,14 +121,21 @@
    (start statements)
    (end EOF)
    (error (λ (tok tname tval)
-            (displayln (format "Error in parsing at '~a'" tval))))
+            (displayln (format "Error in parsing at '~a', token ~a" tval tname))))
    (grammar
     (statement ((assignment) (void))
+               ((if-exp) (void))
                ((funcall) (void)))
     (statements ((statement SEP) (void))
                 ((statement SEP statements) (void)))
     (assignment ((SYMBOL OP_ASSIGN rvalue)
                  (bind-var! $1 $3)))
+    (if-exp ((if-op rvalue then-op statements else-op statements end-op)
+             (if $2 (push-op! 'TRUE-EXEC) (push-op! 'FALSE-EXEC))))
+    (if-op ((IF) (push-op! 'IF)))
+    (then-op ((THEN) (push-op! 'THEN)))
+    (else-op ((ELSE) (push-op! 'ELSE)))
+    (end-op ((END) (push-op! 'END)))
     (rvalue ((SYMBOL) (recall-var $1))
             ((NUMBER) $1)
             ((TRUE) #t)
@@ -145,7 +158,8 @@
 (define (parse-string s)
   (let ([is (open-input-string s)])
     (reset-stack!)
-    (reset-vars!)
-    (furtle-parser (λ () (furtle-lexer is)))
+    (reset-vars! vars)
+    (parameterize ([*current-vars* vars])
+      (furtle-parser (λ () (furtle-lexer is)))
     (displayln (format "stack: ~a" (reverse stack)))
-    (displayln (format "vars: ~a" vars))))
+    (displayln (format "vars: ~a" vars)))))
