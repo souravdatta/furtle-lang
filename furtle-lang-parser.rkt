@@ -10,28 +10,66 @@
 (define *current-vars* (make-parameter (make-hasheq)))
 
 (define vars (make-hasheq))
+(define tvars (make-hasheq))
+(define fvars (make-hasheq))
+
+(define (reset-temp-bindings!)
+  (hash-clear! tvars)
+  (hash-clear! fvars))
 
 (define (reset-vars! vrs)
   (hash-clear! vrs))
 
 (define (bind-var! var val)
-  (let ([pvalue (hash-ref (*current-vars*) var (lambda () #f))])
-    (if pvalue
-        (error (format "Cannot rebind ~a, already bound to ~a"
-                       var
-                       pvalue))
-        (hash-set! (*current-vars*) var val))))
-        
+  (let ([the-hash (cond
+                    ((eq? if-flag 'true-part) tvars)
+                    ((eq? if-flag 'false-part) fvars)
+                    (else (*current-vars*)))])
+    (let ([pvalue (hash-ref the-hash var (lambda () #f))])
+      (if pvalue
+          (error (format "Cannot rebind ~a, already bound to ~a"
+                         var
+                         pvalue))
+          (hash-set! the-hash var val)))))
+
+(define (merge-bindings! result-val)
+  (set if-flag #f)
+  (hash-map (if result-val tvars fvars)
+            (λ (k v)
+              (bind-var! k v))))
+     
 (define (recall-var var)
   (hash-ref (*current-vars*) var (λ () (error (format "Unable to get bindings for ~a" var)))))
 
 (define stack '())
+(define tstack '())
+(define fstack '())
 
 (define (reset-stack!)
   (set! stack '()))
 
+(define (reset-temp-stacks!)
+  (set! tstack '())
+  (set! fstack '()))
+
+(define if-flag #f)
+
+(define (reset-if-flag!)
+  (set! if-flag #f))
+
+(define (set-if-flag! v)
+  (set! if-flag v))
+
 (define (push-op! v)
-  (set! stack (cons v stack)))
+  (cond
+    ((eq? if-flag 'true-part) (set! tstack (cons v tstack)))
+    ((eq? if-flag 'false-part) (set! fstack (cons v fstack)))
+    (else (set! stack (cons v stack)))))
+
+(define (merge-temp-stack! result-val)
+  (if result-val
+      (set! stack (append tstack stack))
+      (set! stack (append fstack stack))))
 
 (define (pop-op!)
   (let ([stk (*current-stack*)])
@@ -131,11 +169,15 @@
     (assignment ((SYMBOL OP_ASSIGN rvalue)
                  (bind-var! $1 $3)))
     (if-exp ((if-op rvalue then-op statements else-op statements end-op)
-             (if $2 (push-op! 'TRUE-EXEC) (push-op! 'FALSE-EXEC))))
-    (if-op ((IF) (push-op! 'IF)))
-    (then-op ((THEN) (push-op! 'THEN)))
-    (else-op ((ELSE) (push-op! 'ELSE)))
-    (end-op ((END) (push-op! 'END)))
+             (begin
+               (merge-temp-stack! $2)
+               (merge-bindings! $2))))
+    (if-op ((IF) (begin (reset-temp-stacks!)
+                        (reset-temp-bindings!)
+                        (reset-if-flag!))))
+    (then-op ((THEN) (set-if-flag! 'true-part)))
+    (else-op ((ELSE) (set-if-flag! 'false-part)))
+    (end-op ((END) (reset-if-flag!)))
     (rvalue ((SYMBOL) (recall-var $1))
             ((NUMBER) $1)
             ((TRUE) #t)
@@ -158,8 +200,11 @@
 (define (parse-string s)
   (let ([is (open-input-string s)])
     (reset-stack!)
+    (reset-temp-stacks!)
+    (reset-if-flag!)
     (reset-vars! vars)
     (parameterize ([*current-vars* vars])
       (furtle-parser (λ () (furtle-lexer is)))
     (displayln (format "stack: ~a" (reverse stack)))
     (displayln (format "vars: ~a" vars)))))
+ 
